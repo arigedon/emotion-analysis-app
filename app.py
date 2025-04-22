@@ -40,18 +40,57 @@ if 'model' not in st.session_state or 'tokenizer' not in st.session_state:
     # モデルの読み込み（初回のみ）
     with st.spinner('モデルを読み込んでいます...少し時間がかかります'):
         try:
-            # 認証不要のモデルを使用
-            checkpoint = 'cl-tohoku/bert-base-japanese-v2'
+            # オフラインモードとキャッシュを使用
+            import os
+            os.environ['HF_DATASETS_OFFLINE'] = '1'
+            os.environ['TRANSFORMERS_OFFLINE'] = '1'
             
-            # トークナイザーとモデルの読み込み
-            st.session_state.tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-            st.session_state.model = AutoModelForSequenceClassification.from_pretrained(
-                checkpoint, num_labels=len(emotion_names_jp)
-            )
-            st.success('モデルの読み込みが完了しました！')
+            # キャッシュディレクトリを指定
+            cache_dir = "./model_cache"
+            
+            try:
+                # まず軽量モデルでオフラインでの読み込みを試す
+                checkpoint = 'cl-tohoku/bert-base-japanese-v2'
+                st.session_state.tokenizer = AutoTokenizer.from_pretrained(
+                    checkpoint, cache_dir=cache_dir, local_files_only=True)
+                st.session_state.model = AutoModelForSequenceClassification.from_pretrained(
+                    checkpoint, num_labels=len(emotion_names_jp), cache_dir=cache_dir, local_files_only=True)
+                st.success('モデルをキャッシュから読み込みました！')
+            except:
+                # オフラインモードを無効にして再試行
+                os.environ['HF_DATASETS_OFFLINE'] = '0'
+                os.environ['TRANSFORMERS_OFFLINE'] = '0'
+                
+                checkpoint = 'cl-tohoku/bert-base-japanese-v2'
+                st.session_state.tokenizer = AutoTokenizer.from_pretrained(
+                    checkpoint, cache_dir=cache_dir)
+                st.session_state.model = AutoModelForSequenceClassification.from_pretrained(
+                    checkpoint, num_labels=len(emotion_names_jp), cache_dir=cache_dir)
+                st.success('モデルのダウンロードが完了しました！')
+        
         except Exception as e:
             st.error(f'モデルの読み込み中にエラーが発生しました: {str(e)}')
-            st.stop()
+            st.warning('デモモードで実行します（ランダムな感情値を使用）')
+            
+            # デモモード用のダミーモデルとトークナイザーを設定
+            import random
+            
+            class DummyModel:
+                def eval(self):
+                    pass
+                
+                def __call__(self, **kwargs):
+                    class DummyOutput:
+                        def __init__(self):
+                            self.logits = np.random.rand(1, len(emotion_names_jp))
+                    return DummyOutput()
+            
+            class DummyTokenizer:
+                def __call__(self, text, truncation=True, return_tensors="pt"):
+                    return {}
+            
+            st.session_state.model = DummyModel()
+            st.session_state.tokenizer = DummyTokenizer()
 
 # Softmax関数
 def np_softmax(x):
@@ -60,14 +99,25 @@ def np_softmax(x):
 
 # 感情分析関数
 def analyze_emotion(text):
-    # 推論モードを有効化
-    st.session_state.model.eval()
+    try:
+        # 推論モードを有効化
+        st.session_state.model.eval()
 
-    # 入力データ変換 + 推論
-    tokens = st.session_state.tokenizer(text, truncation=True, return_tensors="pt")
-    preds = st.session_state.model(**tokens)
-    prob = np_softmax(preds.logits.cpu().detach().numpy()[0])
-    return {n: float(p) for n, p in zip(emotion_names_jp, prob)}
+        # 入力データ変換 + 推論
+        tokens = st.session_state.tokenizer(text, truncation=True, return_tensors="pt")
+        preds = st.session_state.model(**tokens)
+        prob = np_softmax(preds.logits.cpu().detach().numpy()[0])
+        return {n: float(p) for n, p in zip(emotion_names_jp, prob)}
+    except Exception as e:
+        st.warning(f"感情分析中にエラーが発生しました: {str(e)}")
+        st.info("ランダムなデータを使用します")
+        
+        # エラー時はランダムな値を返す
+        import random
+        random_values = [random.random() for _ in range(len(emotion_names_jp))]
+        total = sum(random_values)
+        normalized = [v/total for v in random_values]
+        return {n: float(p) for n, p in zip(emotion_names_jp, normalized)}
 
 # テキスト入力エリア
 text_input = st.text_area("ここに分析したい文章を入力してください:", height=150)
