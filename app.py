@@ -2,7 +2,14 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+try:
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+except ImportError:
+    # 必要に応じてインストール
+    import os
+    os.system('pip install -q transformers torch fugashi ipadic unidic-lite')
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # ページ設定
 st.set_page_config(
