@@ -1,0 +1,9 @@
+streamlit
+transformers
+torch
+fugashi
+ipadic
+unidic-lite
+numpy
+pandas
+matplotlib

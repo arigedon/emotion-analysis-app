@@ -1,2 +1,30 @@
-# emotion-analysis-app
-sentiment analysis
+# リアルタイム感情分析アプリ
+
+日本語テキストを入力すると、8つの感情（喜び、悲しみ、期待、驚き、怒り、恐れ、嫌悪、信頼）の強さを分析して視覚化するアプリです。
+
+## 特徴
+
+- 日本語テキストのリアルタイム感情分析
+- 直感的で使いやすいインターフェース
+- 感情の強さをグラフで視覚化
+- サンプルテキストで簡単に試せる機能
+
+## 使用技術
+
+- Streamlit: インタラクティブなWeb UIの構築
+- Transformers (Hugging Face): 自然言語処理モデルの使用
+- 東北大学の日本語BERT: 高精度な日本語感情分析
+- Matplotlib & Pandas: データの可視化と処理
+
+## デプロイ方法
+
+このアプリはStreamlit Cloudでデプロイされています。
+
+## ローカルでの実行方法
+
+```bash
+# 必要なライブラリをインストール
+pip install -r requirements.txt
+
+# アプリを起動
+streamlit run app.py
