@@ -40,41 +40,36 @@ if 'model' not in st.session_state or 'tokenizer' not in st.session_state:
     # モデルの読み込み（初回のみ）
     with st.spinner('モデルを読み込んでいます...少し時間がかかります'):
         try:
-            # オフラインモードとキャッシュを使用
+            # 小さいモデルを使用（接続問題を回避）
             import os
-            os.environ['HF_DATASETS_OFFLINE'] = '1'
-            os.environ['TRANSFORMERS_OFFLINE'] = '1'
+            os.environ['HF_HUB_OFFLINE'] = '0'
             
-            # キャッシュディレクトリを指定
-            cache_dir = "./model_cache"
+            # 認証無しでアクセス可能な代替モデルを使用
+            checkpoint = 'cl-tohoku/bert-base-japanese-char'  # 文字ベースの軽量モデル
             
-            try:
-                # まず軽量モデルでオフラインでの読み込みを試す
-                checkpoint = 'cl-tohoku/bert-base-japanese-v2'
-                st.session_state.tokenizer = AutoTokenizer.from_pretrained(
-                    checkpoint, cache_dir=cache_dir, local_files_only=True)
-                st.session_state.model = AutoModelForSequenceClassification.from_pretrained(
-                    checkpoint, num_labels=len(emotion_names_jp), cache_dir=cache_dir, local_files_only=True)
-                st.success('モデルをキャッシュから読み込みました！')
-            except:
-                # オフラインモードを無効にして再試行
-                os.environ['HF_DATASETS_OFFLINE'] = '0'
-                os.environ['TRANSFORMERS_OFFLINE'] = '0'
-                
-                checkpoint = 'cl-tohoku/bert-base-japanese-v2'
-                st.session_state.tokenizer = AutoTokenizer.from_pretrained(
-                    checkpoint, cache_dir=cache_dir)
-                st.session_state.model = AutoModelForSequenceClassification.from_pretrained(
-                    checkpoint, num_labels=len(emotion_names_jp), cache_dir=cache_dir)
-                st.success('モデルのダウンロードが完了しました！')
-        
+            # トークナイザーとモデルの読み込み - 追加オプション設定
+            st.session_state.tokenizer = AutoTokenizer.from_pretrained(
+                checkpoint, 
+                use_fast=True,
+                use_auth_token=False,
+                trust_remote_code=True
+            )
+            
+            st.session_state.model = AutoModelForSequenceClassification.from_pretrained(
+                checkpoint, 
+                num_labels=len(emotion_names_jp),
+                use_auth_token=False,
+                trust_remote_code=True
+            )
+            
+            st.success('モデルの読み込みが完了しました！')
+            st.session_state.demo_mode = False
+            
         except Exception as e:
             st.error(f'モデルの読み込み中にエラーが発生しました: {str(e)}')
             st.warning('デモモードで実行します（ランダムな感情値を使用）')
             
             # デモモード用のダミーモデルとトークナイザーを設定
-            import random
-            
             class DummyModel:
                 def eval(self):
                     pass
@@ -91,6 +86,7 @@ if 'model' not in st.session_state or 'tokenizer' not in st.session_state:
             
             st.session_state.model = DummyModel()
             st.session_state.tokenizer = DummyTokenizer()
+            st.session_state.demo_mode = True
 
 # Softmax関数
 def np_softmax(x):
@@ -99,6 +95,17 @@ def np_softmax(x):
 
 # 感情分析関数
 def analyze_emotion(text):
+    # デモモードかどうかをチェック
+    if st.session_state.get('demo_mode', True):
+        # デモモード時はランダムな値を生成
+        import random
+        random_values = [random.random() for _ in range(len(emotion_names_jp))]
+        # 合計が1になるように正規化
+        total = sum(random_values)
+        normalized = [v/total for v in random_values]
+        return {n: float(p) for n, p in zip(emotion_names_jp, normalized)}
+    
+    # 通常モード
     try:
         # 推論モードを有効化
         st.session_state.model.eval()
@@ -118,89 +125,6 @@ def analyze_emotion(text):
         total = sum(random_values)
         normalized = [v/total for v in random_values]
         return {n: float(p) for n, p in zip(emotion_names_jp, normalized)}
-
-# テキスト入力エリア
-text_input = st.text_area("ここに分析したい文章を入力してください:", height=150)
-
-# デモ用のサンプルテキスト
-st.markdown("### サンプルテキスト")
-sample_texts = [
-    "今日はとても楽しい一日でした！",
-    "悲しいニュースを聞いてショックを受けています。",
-    "明日の旅行がとても楽しみです！",
-    "突然の知らせに驚いています。",
-    "この対応には本当に腹が立ちます。"
-]
-
-# サンプルテキストボタン
-cols = st.columns(len(sample_texts))
-for i, col in enumerate(cols):
-    if col.button(f"サンプル{i+1}"):
-        text_input = sample_texts[i]
-        st.session_state.text_input = sample_texts[i]
-        st.experimental_rerun()
-
-# セッション状態の処理
-if 'text_input' in st.session_state:
-    text_input = st.session_state.text_input
-
-# 分析ボタン
-if st.button('分析する') or text_input:
-    if text_input:
-        with st.spinner('感情を分析中...'):
-            # 実際の分析処理
-            result = analyze_emotion(text_input)
-            
-            # 結果の表示
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                # バーチャートの作成
-                fig, ax = plt.subplots(figsize=(10, 6))
-                emotions = list(result.keys())
-                values = list(result.values())
-                
-                # 最大値の位置を取得
-                max_index = values.index(max(values))
-                
-                # 色のリストを作成（最大値の場所を強調）
-                bar_colors = [colors[i] + '99' for i in range(len(emotions))]
-                bar_colors[max_index] = colors[max_index]
-                
-                # バーチャートをプロット
-                bars = ax.bar(emotions, values, color=bar_colors)
-                
-                # グラフの設定
-                ax.set_ylim(0, 1)
-                ax.set_ylabel('確率')
-                ax.set_title('感情分析結果')
-                
-                # 最大値のバーにラベルを追加
-                ax.text(max_index, values[max_index] + 0.02, f'{values[max_index]:.3f}', 
-                        ha='center', va='bottom', fontsize=12, weight='bold')
-                
-                st.pyplot(fig)
-            
-            with col2:
-                # 結果の表示
-                st.write("### 感情スコア")
-                
-                # データフレームを作成
-                df = pd.DataFrame({
-                    '感情': emotions,
-                    '確率': [round(v, 3) for v in values]
-                })
-                
-                # 確率が高い順にソート
-                df = df.sort_values('確率', ascending=False).reset_index(drop=True)
-                
-                # 表形式で表示
-                st.dataframe(df, height=300)
-                
-                # 最も強い感情のハイライト表示
-                max_emotion = df.iloc[0]['感情']
-                max_prob = df.iloc[0]['確率']
-                st.markdown(f"### 最も強い感情: **{max_emotion}** ({max_prob:.3f})")
 
 # フッター
 st.markdown("---")
